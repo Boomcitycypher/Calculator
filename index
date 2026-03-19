@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Motor Bros – Tools</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #f1f5f9; color: #111827; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+    .logo { font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #3b82f6, #6366f1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; }
+    .sub { color: #6b7280; margin: 0 0 36px; font-size: 15px; }
+    .cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 700px; }
+    .card { background: white; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px 24px; flex: 1; min-width: 260px; max-width: 320px; text-decoration: none; color: inherit; box-shadow: 0 4px 16px rgba(0,0,0,0.06); transition: transform 0.15s, box-shadow 0.15s; }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(59,130,246,0.15); }
+    .card-icon { font-size: 32px; margin-bottom: 14px; }
+    .card-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .card-desc { color: #6b7280; font-size: 13px; line-height: 1.6; }
+    .arrow { display: inline-block; margin-top: 14px; font-size: 13px; color: #3b82f6; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="logo">Motor Bros</div>
+  <p class="sub">Vehicle pricing tools</p>
+  <div class="cards">
+    <a class="card" href="estimator.html">
+      <div class="card-icon">🧮</div>
+      <div class="card-title">Price Estimator</div>
+      <div class="card-desc">Full landed cost estimate — duty lookup, subtotal, customs, VAT, local costs, selling price &amp; profit.</div>
+      <div class="arrow">Open →</div>
+    </a>
+    <a class="card" href="calculator.html">
+      <div class="card-icon">🏦</div>
+      <div class="card-title">Vehicle Calculator</div>
+      <div class="card-desc">Bank fees breakdown — wire payments, FX rate, excise, VAT, and declaration cost.</div>
+      <div class="arrow">Open →</div>
+    </a>
+  </div>
+</body>
+</html>
