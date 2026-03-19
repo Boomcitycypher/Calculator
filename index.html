@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Motor Bros – Vehicle Import Cost Estimator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a5f' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useCallback } = React;
+
+    // --- Formatting helpers ---
+    function fmtBDS(v) {
+      return 'BDS $' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtUSD(v) {
+      return 'USD $' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtPct(v) {
+      return (Number(v || 0) * 100).toFixed(2) + '%';
+    }
+
+    // --- CC Bracket options by engine type ---
+    const CC_OPTIONS = {
+      Petrol:   ['<=1600', '1601-1799', '>=1800'],
+      Diesel:   ['<=2000', '2001-2500', '>2500'],
+      Hybrid:   ['<=1600', '1601-1799', '1800-1999', '>=2000'],
+      Electric: ['NA'],
+    };
+
+    // --- Excise rate lookup ---
+    function getExcisePct(engineType, ccBracket) {
+      const table = {
+        'Petrol|<=1600':     0.4695,
+        'Petrol|1601-1799':  0.6277,
+        'Petrol|>=1800':     0.6277,
+        'Diesel|<=2000':     0.4695,
+        'Diesel|2001-2500':  0.6277,
+        'Diesel|>2500':      0.6277,
+        'Hybrid|<=1600':     0.20,
+        'Hybrid|1601-1799':  0.35,
+        'Hybrid|1800-1999':  0.4695,
+        'Hybrid|>=2000':     0.6277,
+        'Electric|NA':       0.10,
+      };
+      return table[engineType + '|' + ccBracket] || 0;
+    }
+
+    // --- Import duty logic ---
+    function getImportDutyPct(bodyType, engineType) {
+      if (bodyType === 'Pickup')   return 0.10;
+      if (engineType === 'Electric') return 0.00;
+      if (engineType === 'Hybrid')   return 0.35;
+      return 0.45;
+    }
+
+    // --- Default state ---
+    const DEFAULTS = {
+      vendorPrice: 20000,
+      numPayments: 2,
+      firstPayment: 7000,
+      wireFee: 0,
+      usdToBdsBank: 2.02768,
+      bankFxFeePct: 2,
+      fixedBankFee: 105,
+      declaredPrice: 6000,
+      usdToBdsCustoms: 2.00,
+      freight: 0,
+      bodyType: 'Car',
+      engineType: 'Hybrid',
+      ccBracket: '<=1600',
+      vatPct: 17.5,
+      processingFee: 10,
+      portClearance: 1000,
+      serviceOption: 'VIP',
+      customServiceCost: 0,
+      targetProfitPct: 35,
+    };
+
+    // --- Collapsible Section ---
+    function Section({ title, defaultOpen = true, children, color }) {
+      const [open, setOpen] = useState(defaultOpen);
+      const colors = {
+        blue: 'from-blue-600 to-blue-700',
+        amber: 'from-amber-500 to-amber-600',
+        emerald: 'from-emerald-600 to-emerald-700',
+      };
+      return (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+          <button
+            onClick={() => setOpen(!open)}
+            className={`w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r ${colors[color] || colors.blue} text-white font-semibold text-left`}
+          >
+            <span className="text-sm uppercase tracking-wide">{title}</span>
+            <svg className={`w-5 h-5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {open && <div className="p-5">{children}</div>}
+        </div>
+      );
+    }
+
+    // --- Input Field ---
+    function Field({ label, value, onChange, type = 'number', prefix, suffix, options, disabled, show = true }) {
+      if (!show) return null;
+      if (options) {
+        return (
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+            <select
+              value={value}
+              onChange={e => onChange(e.target.value)}
+              disabled={disabled}
+              className="w-full px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-gray-900 text-sm font-medium focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+            >
+              {options.map(o => <option key={typeof o === 'object' ? o.value : o} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : o}</option>)}
+            </select>
+          </div>
+        );
+      }
+      return (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+          <div className="relative">
+            {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">{prefix}</span>}
+            <input
+              type={type}
+              value={value}
+              onChange={e => onChange(type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)}
+              disabled={disabled}
+              className={`w-full ${prefix ? 'pl-12' : 'px-3'} ${suffix ? 'pr-10' : 'pr-3'} py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-gray-900 text-sm font-medium focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none disabled:opacity-50`}
+              step="any"
+            />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">{suffix}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    // --- Computed Output ---
+    function Output({ label, value, highlight }) {
+      return (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+          <div className={`px-3 py-2.5 rounded-xl border text-sm font-semibold ${highlight ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+            {value}
+          </div>
+        </div>
+      );
+    }
+
+    // --- Main App ---
+    function App() {
+      const [s, setS] = useState({ ...DEFAULTS });
+
+      const set = useCallback((key) => (val) => {
+        setS(prev => {
+          const next = { ...prev, [key]: val };
+          // When engine type changes, reset CC bracket to first valid option
+          if (key === 'engineType') {
+            next.ccBracket = CC_OPTIONS[val][0];
+          }
+          return next;
+        });
+      }, []);
+
+      const n = (v) => Number(v) || 0;
+
+      const calc = useMemo(() => {
+        // Section 1 — Vehicle Payment & Bank Fees
+        const secondPayment = Math.max(0, n(s.vendorPrice) - n(s.firstPayment));
+        const totalPaidUSD = n(s.firstPayment) + secondPayment + (n(s.wireFee) * n(s.numPayments));
+        const convertedBDS = totalPaidUSD * n(s.usdToBdsBank);
+        const bankFxFeeBDS = convertedBDS * (n(s.bankFxFeePct) / 100);
+        const fixedBankFeesBDS = n(s.fixedBankFee) * n(s.numPayments);
+        const totalBankCost = convertedBDS + bankFxFeeBDS + fixedBankFeesBDS;
+
+        // Section 2 — Declaration / Duties & Taxes
+        const importDutyPct = getImportDutyPct(s.bodyType, s.engineType);
+        const excisePct = getExcisePct(s.engineType, s.ccBracket);
+        const customsValueBDS = (n(s.declaredPrice) + n(s.freight)) * n(s.usdToBdsCustoms);
+        const importDutyBDS = customsValueBDS * importDutyPct;
+        const exciseBaseBDS = customsValueBDS + importDutyBDS;
+        const exciseBDS = exciseBaseBDS * excisePct;
+        const vatBaseBDS = customsValueBDS + importDutyBDS + exciseBDS;
+        const vatBDS = vatBaseBDS * (n(s.vatPct) / 100);
+        const processFee = n(s.declaredPrice) > 0 ? n(s.processingFee) : 0;
+        const totalDeclaration = importDutyBDS + exciseBDS + vatBDS + processFee;
+
+        // Section 3 — Local Costs & Sales Estimate
+        const serviceCost = s.serviceOption === 'VIP' ? 2000
+          : s.serviceOption === 'No Service' ? 0
+          : n(s.customServiceCost);
+        const totalBeforeLocal = totalBankCost + totalDeclaration;
+        const finalCost = totalBeforeLocal + n(s.portClearance) + serviceCost;
+        const targetProfit = finalCost * (n(s.targetProfitPct) / 100);
+        const suggestedPrice = finalCost + targetProfit;
+        const profitMargin = suggestedPrice > 0 ? targetProfit / suggestedPrice : 0;
+
+        return {
+          secondPayment, totalPaidUSD, convertedBDS, bankFxFeeBDS, fixedBankFeesBDS, totalBankCost,
+          importDutyPct, excisePct, customsValueBDS, importDutyBDS, exciseBaseBDS, exciseBDS, vatBaseBDS, vatBDS, processFee, totalDeclaration,
+          serviceCost, totalBeforeLocal, finalCost, targetProfit, suggestedPrice, profitMargin,
+        };
+      }, [s]);
+
+      const resetDefaults = () => setS({ ...DEFAULTS });
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6 pb-24">
+          {/* Header */}
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-extrabold text-gray-900">Motor Bros</h1>
+            <p className="text-sm text-gray-500 mt-1">Vehicle Import Cost Estimator</p>
+          </div>
+
+          {/* Section 1 */}
+          <Section title="1. Vehicle Payment & Bank Fees" color="blue" defaultOpen={true}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Vendor Price" value={s.vendorPrice} onChange={set('vendorPrice')} prefix="USD" />
+              <Field label="Number of Payments" value={s.numPayments} onChange={set('numPayments')} options={[{value: 1, label: '1'}, {value: 2, label: '2'}]} />
+              <Field label="1st Payment" value={s.firstPayment} onChange={set('firstPayment')} prefix="USD" />
+              <Field label="Wire Fee per Payment" value={s.wireFee} onChange={set('wireFee')} prefix="USD" />
+              <Field label="USD to BDS Rate (Bank)" value={s.usdToBdsBank} onChange={set('usdToBdsBank')} />
+              <Field label="Bank FX Fee %" value={s.bankFxFeePct} onChange={set('bankFxFeePct')} suffix="%" />
+              <Field label="Fixed Bank Fee / Payment" value={s.fixedBankFee} onChange={set('fixedBankFee')} prefix="BDS" />
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+              <Output label="2nd Payment" value={fmtUSD(calc.secondPayment)} />
+              <Output label="Total Paid (USD)" value={fmtUSD(calc.totalPaidUSD)} />
+              <Output label="Converted to BDS" value={fmtBDS(calc.convertedBDS)} />
+              <Output label="Bank FX Fee" value={fmtBDS(calc.bankFxFeeBDS)} />
+              <Output label="Fixed Bank Fees" value={fmtBDS(calc.fixedBankFeesBDS)} />
+              <Output label="Total Bank Cost" value={fmtBDS(calc.totalBankCost)} highlight />
+            </div>
+          </Section>
+
+          {/* Section 2 */}
+          <Section title="2. Declaration / Duties & Taxes" color="amber" defaultOpen={true}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Declared Price" value={s.declaredPrice} onChange={set('declaredPrice')} prefix="USD" />
+              <Field label="USD to BDS Rate (Customs)" value={s.usdToBdsCustoms} onChange={set('usdToBdsCustoms')} />
+              <Field label="Freight" value={s.freight} onChange={set('freight')} prefix="USD" />
+              <Field label="Body Type" value={s.bodyType} onChange={set('bodyType')} options={['Car', 'Pickup']} />
+              <Field label="Engine Type" value={s.engineType} onChange={set('engineType')} options={['Petrol', 'Diesel', 'Hybrid', 'Electric']} />
+              <Field label="CC Bracket" value={s.ccBracket} onChange={set('ccBracket')} options={CC_OPTIONS[s.engineType]} />
+              <Field label="VAT %" value={s.vatPct} onChange={set('vatPct')} suffix="%" />
+              <Field label="Processing Fee" value={s.processingFee} onChange={set('processingFee')} prefix="BDS" />
+            </div>
+            <div className="mt-3 p-2.5 bg-gray-50 rounded-xl text-xs text-gray-500">
+              Import Duty: <span className="font-semibold text-gray-700">{(calc.importDutyPct * 100).toFixed(0)}%</span>
+              {' '} | Excise Rate: <span className="font-semibold text-gray-700">{(calc.excisePct * 100).toFixed(2)}%</span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+              <Output label="Customs Value (BDS)" value={fmtBDS(calc.customsValueBDS)} />
+              <Output label="Import Duty" value={fmtBDS(calc.importDutyBDS)} />
+              <Output label="Excise Tax" value={fmtBDS(calc.exciseBDS)} />
+              <Output label="VAT" value={fmtBDS(calc.vatBDS)} />
+              <Output label="Processing Fee" value={fmtBDS(calc.processFee)} />
+              <Output label="Total Declaration" value={fmtBDS(calc.totalDeclaration)} highlight />
+            </div>
+          </Section>
+
+          {/* Section 3 */}
+          <Section title="3. Local Costs & Sales Estimate" color="emerald" defaultOpen={true}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Port Clearance" value={s.portClearance} onChange={set('portClearance')} prefix="BDS" />
+              <Field label="Service Option" value={s.serviceOption} onChange={set('serviceOption')} options={['VIP', 'No Service', 'Custom']} />
+              <Field label="Custom Service Cost" value={s.customServiceCost} onChange={set('customServiceCost')} prefix="BDS" show={s.serviceOption === 'Custom'} />
+              <Field label="Target Profit %" value={s.targetProfitPct} onChange={set('targetProfitPct')} suffix="%" />
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+              <Output label="Service Cost" value={fmtBDS(calc.serviceCost)} />
+              <Output label="Profit Margin" value={fmtPct(calc.profitMargin)} />
+              <Output label="Target Profit" value={fmtBDS(calc.targetProfit)} />
+              <Output label="Final Cost" value={fmtBDS(calc.finalCost)} highlight />
+            </div>
+          </Section>
+
+          {/* Summary Panel */}
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-5 text-white shadow-lg mb-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">Summary</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-300">Total Bank Cost</span>
+                <span className="text-base font-bold">{fmtBDS(calc.totalBankCost)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-300">Total Declaration</span>
+                <span className="text-base font-bold">{fmtBDS(calc.totalDeclaration)}</span>
+              </div>
+              <div className="border-t border-gray-700 pt-3 flex justify-between items-center">
+                <span className="text-sm text-gray-300">Final Cost</span>
+                <span className="text-lg font-bold text-amber-400">{fmtBDS(calc.finalCost)}</span>
+              </div>
+              <div className="bg-emerald-600/20 border border-emerald-500/30 rounded-xl p-3 flex justify-between items-center">
+                <span className="text-sm font-semibold text-emerald-300">Suggested Sales Price</span>
+                <span className="text-xl font-extrabold text-emerald-400">{fmtBDS(calc.suggestedPrice)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Reset Button */}
+          <button
+            onClick={resetDefaults}
+            className="w-full py-3 rounded-xl border-2 border-gray-300 text-gray-600 font-semibold text-sm hover:bg-gray-100 active:bg-gray-200 transition"
+          >
+            Reset to Defaults
+          </button>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
